@@ -1,0 +1,29 @@
+{
+  "name": "mira-assistant",
+  "displayName": "Mira Assistant",
+  "publisher": "mira",
+  "version": "0.0.1",
+  "engines": { "vscode": "^1.92.0" },
+  "categories": ["Other"],
+  "activationEvents": [
+    "onCommand:mira.connect",
+    "onCommand:mira.listTools",
+    "onCommand:mira.executePrompt",
+    "onView:mira.chat"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      { "command": "mira.connect", "title": "Mira: Connect" },
+      { "command": "mira.listTools", "title": "Mira: List Tools" },
+      { "command": "mira.executePrompt", "title": "Mira: Execute Prompt" },
+      { "command": "mira.openChatView", "title": "Mira: Open Chat View" }
+    ],
+    "views": {
+      "explorer": [
+        { "id": "mira.chat", "name": "Mira Chat" }
+      ]
+    }
+  },
+  "extensionKind": ["workspace"]
+}

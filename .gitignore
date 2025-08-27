@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+out/
+coverage/
+
+# IDEs and editors
+.idea/
+.vscode/
+
+# VS Code Extension test sandbox
+.vscode-test/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Env and config
+.env
+.env.local
+config/local/*.json
+
+# Misc
+.mira/

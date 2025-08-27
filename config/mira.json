@@ -1,0 +1,24 @@
+{
+  "mcp": {
+    "servers": [
+      { "id": "fs", "transport": "http", "endpoint": "http://localhost:3001" },
+      { "id": "exec", "transport": "http", "endpoint": "http://localhost:3002" }
+    ]
+  },
+  "llm": {
+    "provider": "litellm",
+    "chat_model": "gpt-4o-mini",
+    "embedding_model": "text-embedding-3-small",
+    "api_base": "http://localhost:8000",
+    "api_key": "${LITELLM_API_KEY}"
+  },
+  "neo4j": {
+    "uri": "bolt://localhost:7687",
+    "user": "neo4j",
+    "password": "neo4j_password"
+  },
+  "vector_db": {
+    "provider": "weaviate",
+    "endpoint": "http://localhost:8080"
+  }
+}
