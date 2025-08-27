@@ -442,6 +442,313 @@ Example request
 
 ---
 
+### 4.6 terminals/* (Terminal Sessions)
+
+Terminal sessions provide interactive command execution with stdin/stdout/stderr streaming, lifecycle control, and reattachment.
+
+Methods
+- terminals/create
+- terminals/write
+- terminals/resize
+- terminals/kill
+- terminals/attach
+- terminals/list
+- terminals/read_logs (optional)
+
+Notifications
+- terminals/stream
+- terminals/exit
+
+Schema: terminals/create (request params)
+```json
+{
+  "type": "object",
+  "properties": {
+    "name": { "type": ["string", "null"] },
+    "cwd": { "type": ["string", "null"] },
+    "env": { "type": "object", "additionalProperties": {"type": "string"} },
+    "command": { "type": ["string", "null"], "description": "If omitted, spawn user's shell" },
+    "args": { "type": "array", "items": {"type": "string"}, "default": [] },
+    "shell": { "type": "boolean", "default": false },
+    "cols": { "type": ["integer", "null"] },
+    "rows": { "type": ["integer", "null"] },
+    "attach": { "type": "boolean", "default": true }
+  },
+  "additionalProperties": false
+}
+```
+
+Result
+```json
+{
+  "type": "object",
+  "properties": {
+    "session_id": { "type": "string" },
+    "pid": { "type": ["integer", "null"] },
+    "name": { "type": ["string", "null"] },
+    "cwd": { "type": ["string", "null"] },
+    "started_at": { "type": "string", "description": "ISO-8601" }
+  },
+  "required": ["session_id", "started_at"],
+  "additionalProperties": false
+}
+```
+
+Schema: terminals/write (request params)
+```json
+{
+  "type": "object",
+  "properties": {
+    "session_id": { "type": "string" },
+    "data": { "type": "string", "description": "UTF-8 text to write to stdin" }
+  },
+  "required": ["session_id", "data"],
+  "additionalProperties": false
+}
+```
+
+Result
+```json
+{ "type": "object", "properties": { "bytes": { "type": "integer" } }, "required": ["bytes"] }
+```
+
+Schema: terminals/resize (request params)
+```json
+{
+  "type": "object",
+  "properties": {
+    "session_id": { "type": "string" },
+    "cols": { "type": "integer" },
+    "rows": { "type": "integer" }
+  },
+  "required": ["session_id", "cols", "rows"],
+  "additionalProperties": false
+}
+```
+
+Result
+```json
+{ "type": "object", "properties": { "ok": { "type": "boolean" } }, "required": ["ok"] }
+```
+
+Schema: terminals/kill (request params)
+```json
+{
+  "type": "object",
+  "properties": {
+    "session_id": { "type": "string" },
+    "signal": { "type": ["string", "null"], "enum": ["SIGTERM", "SIGKILL", "SIGHUP", null] }
+  },
+  "required": ["session_id"],
+  "additionalProperties": false
+}
+```
+
+Result
+```json
+{ "type": "object", "properties": { "ok": { "type": "boolean" } }, "required": ["ok"] }
+```
+
+Schema: terminals/attach (request params)
+```json
+{
+  "type": "object",
+  "properties": { "session_id": { "type": "string" } },
+  "required": ["session_id"],
+  "additionalProperties": false
+}
+```
+
+Result
+```json
+{ "type": "object", "properties": { "ok": { "type": "boolean" } }, "required": ["ok"] }
+```
+
+Schema: terminals/list (result)
+```json
+{
+  "type": "object",
+  "properties": {
+    "sessions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "session_id": { "type": "string" },
+          "name": { "type": ["string", "null"] },
+          "cwd": { "type": ["string", "null"] },
+          "started_at": { "type": "string" },
+          "ended_at": { "type": ["string", "null"] },
+          "status": { "type": "string", "enum": ["running", "exited", "killed"] }
+        },
+        "required": ["session_id", "status", "started_at"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["sessions"],
+  "additionalProperties": false
+}
+```
+
+Schema: terminals/read_logs (request/response)
+```json
+{
+  "request": {
+    "type": "object",
+    "properties": {
+      "session_id": { "type": "string" },
+      "since_ts": { "type": ["string", "null"] },
+      "limit_lines": { "type": ["integer", "null"] }
+    },
+    "required": ["session_id"],
+    "additionalProperties": false
+  },
+  "response": {
+    "type": "object",
+    "properties": {
+      "logs": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "ts": { "type": "string" },
+            "stream": { "type": "string", "enum": ["stdout", "stderr"] },
+            "data": { "type": "string" }
+          },
+          "required": ["ts", "stream", "data"],
+          "additionalProperties": false
+        }
+      }
+    },
+    "required": ["logs"],
+    "additionalProperties": false
+  }
+}
+```
+
+Notifications
+- terminals/stream
+```json
+{ "session_id": "abc", "stream": "stdout", "data": "line...", "timestamp": "2025-08-27T23:19:00Z" }
+```
+- terminals/exit
+```json
+{ "session_id": "abc", "code": 0, "signal": null, "duration_ms": 1234 }
+```
+
+Errors
+- 1002 PermissionDenied
+- 1003 ValidationError
+- 1006 ToolUnavailable
+
+---
+
+### 4.7 planner/* (Task Planning)
+
+Methods
+- planner/create_plan
+- planner/get_plan
+- planner/update_task
+- planner/list_plans
+- planner/delete_plan (optional)
+
+Notifications
+- planner/task_updated
+- planner/plan_updated
+
+Common types
+- TaskStatus: "todo" | "in_progress" | "done" | "blocked"
+- Task: { id: string; description: string; status: TaskStatus; assignee_role: string; parent_id?: string|null; children?: string[] }
+- Plan: { id: string; title: string; description?: string; tasks: Task[]; created_at: string; updated_at: string }
+
+Schema: planner/create_plan (request/response)
+```json
+{
+  "request": {
+    "type": "object",
+    "properties": {
+      "title": { "type": "string" },
+      "user_request": { "type": "string" },
+      "context": { "type": ["string", "null"] },
+      "assignee_default": { "type": ["string", "null"] }
+    },
+    "required": ["title", "user_request"],
+    "additionalProperties": false
+  },
+  "response": {
+    "type": "object",
+    "properties": {
+      "plan": { "type": "object" }
+    },
+    "required": ["plan"],
+    "additionalProperties": false
+  }
+}
+```
+
+Schema: planner/get_plan (request/response)
+```json
+{
+  "request": { "type": "object", "properties": { "plan_id": { "type": "string" } }, "required": ["plan_id"], "additionalProperties": false },
+  "response": { "type": "object", "properties": { "plan": { "type": "object" } }, "required": ["plan"], "additionalProperties": false }
+}
+```
+
+Schema: planner/update_task (request/response)
+```json
+{
+  "request": {
+    "type": "object",
+    "properties": {
+      "plan_id": { "type": "string" },
+      "task_id": { "type": "string" },
+      "patch": {
+        "type": "object",
+        "properties": {
+          "description": { "type": ["string", "null"] },
+          "status": { "type": ["string", "null"], "enum": ["todo", "in_progress", "done", "blocked", null] },
+          "assignee_role": { "type": ["string", "null"] }
+        },
+        "additionalProperties": false
+      }
+    },
+    "required": ["plan_id", "task_id", "patch"],
+    "additionalProperties": false
+  },
+  "response": { "type": "object", "properties": { "task": { "type": "object" }, "plan_id": { "type": "string" } }, "required": ["task", "plan_id"], "additionalProperties": false }
+}
+```
+
+Schema: planner/list_plans (result)
+```json
+{
+  "type": "object",
+  "properties": {
+    "plans": { "type": "array", "items": { "type": "object" } },
+    "next_cursor": { "type": ["string", "null"] }
+  },
+  "required": ["plans"],
+  "additionalProperties": false
+}
+```
+
+Notifications
+- planner/task_updated
+```json
+{ "plan_id": "p1", "task": { "id": "t1", "status": "done" }, "updated_at": "2025-08-27T23:19:00Z" }
+```
+- planner/plan_updated
+```json
+{ "plan": { "id": "p1", "updated_at": "2025-08-27T23:19:00Z" } }
+```
+
+Errors
+- 1003 ValidationError
+- 1004 RateLimited
+
+---
+
 ## 5) Pagination
 
 For methods supporting pagination, servers return `next_cursor`. Clients should pass it back in subsequent requests until null.

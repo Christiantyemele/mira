@@ -17,11 +17,20 @@
       { "command": "mira.connect", "title": "Mira: Connect" },
       { "command": "mira.listTools", "title": "Mira: List Tools" },
       { "command": "mira.executePrompt", "title": "Mira: Execute Prompt" },
-      { "command": "mira.openChatView", "title": "Mira: Open Chat View" }
+      { "command": "mira.openChatView", "title": "Mira: Open Chat View" },
+      { "command": "mira.openTerminalPanel", "title": "Mira: Open Terminal Panel" },
+      { "command": "mira.terminal.newSession", "title": "Mira: New Terminal Session" },
+      { "command": "mira.terminal.killSession", "title": "Mira: Kill Terminal Session" },
+      { "command": "mira.terminal.reattachSession", "title": "Mira: Reattach Terminal Session" },
+      { "command": "mira.openPlannerView", "title": "Mira: Open Planner" },
+      { "command": "mira.planner.createPlan", "title": "Mira: Create Plan" },
+      { "command": "mira.planner.updateTask", "title": "Mira: Update Task" }
     ],
     "views": {
       "explorer": [
-        { "id": "mira.chat", "name": "Mira Chat" }
+        { "id": "mira.chat", "name": "Mira Chat" },
+        { "id": "mira.terminal", "name": "Mira Terminal Sessions" },
+        { "id": "mira.planner", "name": "Mira Planner" }
       ]
     }
   },
