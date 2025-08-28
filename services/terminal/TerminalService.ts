@@ -59,8 +59,8 @@ export class TerminalService {
     const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const session: TerminalSession = {
       session_id: id,
-      name: opts.name ?? null ?? undefined,
-      cwd: opts.cwd ?? null ?? undefined,
+      name: opts.name ?? null,
+      cwd: opts.cwd ?? null,
       pid: null, // stub: no actual process
       started_at: new Date().toISOString(),
       ended_at: null,

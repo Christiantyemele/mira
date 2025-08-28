@@ -17,7 +17,7 @@ export class ToolRegistry {
       arr = arr.filter((t) => (t.enabled ?? true) === filter.enabled);
     }
     if (filter?.tags && filter.tags.length) {
-      arr = arr.filter((t) => t.tags?.some((tag) => filter.tags!.includes(tag)));
+      arr = arr.filter((t) => t.tags?.some((tag: string) => filter.tags!.includes(tag)));
     }
     return arr;
   }

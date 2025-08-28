@@ -1,37 +1,40 @@
 import { MCPClient, type Transport } from '../../services/mcp/Client';
 
-describe('MCPClient', () => {
-  class FakeTransport implements Transport {
-    public last?: { method: string; params?: Record<string, unknown> };
-    async request<T = unknown>(method: string, params?: Record<string, unknown>): Promise<T> {
-      this.last = { method, params };
-      switch (method) {
-        case 'tools/list':
-          // @ts-expect-error - simplifying test data shape
-          return { tools: [{ name: 'files/read', description: 'Read a file' }] } as T;
-        case 'exec/run':
-          // @ts-expect-error - simplifying test data shape
-          return { exit_code: 0, stdout: 'ok', stderr: '', duration_ms: 1, timed_out: false } as T;
-        default:
-          return {} as T;
-      }
-    }
+class MockTransport implements Transport {
+  public lastSent?: string;
+  private cb: ((msg: string) => void) | null = null;
+
+  send(json: string): void {
+    this.lastSent = json;
   }
 
-  it('calls tools/list and returns tools', async () => {
-    const tx = new FakeTransport();
-    const client = new MCPClient(tx);
-    const res = await client.listTools({ limit: 10 });
-    expect(tx.last?.method).toBe('tools/list');
-    expect(res.tools[0].name).toBe('files/read');
-  });
+  onMessage(cb: (msg: string) => void): void {
+    this.cb = cb;
+  }
 
-  it('calls exec/run and returns result', async () => {
-    const tx = new FakeTransport();
+  emit(msg: string) {
+    if (this.cb) this.cb(msg);
+  }
+}
+
+describe('MCPClient JSON-RPC', () => {
+  it('request sends proper JSON-RPC and resolves upon response', async () => {
+    const tx = new MockTransport();
     const client = new MCPClient(tx);
-    const res = await client.execRun({ command: 'echo', args: ['ok'] });
-    expect(tx.last?.method).toBe('exec/run');
-    // @ts-expect-error test convenience access
-    expect(res.exit_code).toBe(0);
+
+    const p = client.request('tools/list', { limit: 10 });
+
+    expect(tx.lastSent).toBeDefined();
+    const payload = JSON.parse(tx.lastSent!);
+    expect(payload.jsonrpc).toBe('2.0');
+    expect(payload.method).toBe('tools/list');
+    expect(typeof payload.id).toBe('number');
+    expect(payload.params).toEqual({ limit: 10 });
+
+    const response = { jsonrpc: '2.0', id: payload.id, result: { tools: [{ name: 'files/read' }] } };
+    tx.emit(JSON.stringify(response));
+
+    const res = await p;
+    expect(res).toEqual({ tools: [{ name: 'files/read' }] });
   });
 });

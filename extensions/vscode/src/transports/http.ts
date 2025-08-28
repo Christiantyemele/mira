@@ -1,55 +1,61 @@
-export interface JsonRpcRequest {
-  jsonrpc: '2.0';
-  method: string;
-  params?: Record<string, unknown>;
-  id: number | string;
-}
-
-export interface JsonRpcResponse<T = unknown> {
-  jsonrpc: '2.0';
-  id: number | string | null;
-  result?: T;
-  error?: { code: number; message: string; data?: unknown };
-}
+import axios, { AxiosInstance, AxiosRequestHeaders } from 'axios';
 
 export interface HttpTransportOptions {
   endpoint: string;
-  headers?: Record<string, string>;
+  headers?: AxiosRequestHeaders;
   timeoutMs?: number;
+  axiosInstance?: AxiosInstance;
 }
 
-// Declare minimal globals to avoid requiring DOM lib in TS config
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-declare const fetch: any;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-declare const AbortController: any;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type RequestInit = any;
+export type MessageHandler = (msg: string) => void;
 
-export class HttpTransport {
-  constructor(private readonly opts: HttpTransportOptions) {}
+/**
+ * A simple JSON-RPC over HTTP transport. Each send() performs a POST and
+ * forwards the response payload to the registered onMessage handler.
+ */
+export class HttpJSONRPCTransport {
+  private handler: MessageHandler | null = null;
+  private axios: AxiosInstance;
 
-  async request<T = unknown>(method: string, params?: Record<string, unknown>): Promise<T> {
-    // Minimal stub using fetch; in production handle retries and timeouts.
-    const body: JsonRpcRequest = { jsonrpc: '2.0', method, params: params ?? {}, id: Date.now() };
-    const controller = typeof AbortController !== 'undefined' ? new AbortController() : undefined;
-    const timeout = this.opts.timeoutMs ?? 10000;
-    const timer = controller ? setTimeout(() => controller.abort(), timeout) : undefined;
+  constructor(private readonly options: HttpTransportOptions) {
+    this.axios = options.axiosInstance ?? axios.create({
+      timeout: options.timeoutMs ?? 15000,
+      headers: options.headers,
+    });
+  }
+
+  onMessage(cb: MessageHandler): void {
+    this.handler = cb;
+  }
+
+  async send(json: string): Promise<void> {
+    const { endpoint } = this.options;
+    // Try to extract id so we can relay structured errors if HTTP fails
+    let id: number | string | null = null;
     try {
-      const res = await fetch(this.opts.endpoint, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', ...(this.opts.headers ?? {}) },
-        body: JSON.stringify(body),
-        signal: controller?.signal,
-      } as RequestInit);
-      const json = (await res.json()) as JsonRpcResponse<T>;
-      if (json.error) throw new Error(`${json.error.code}: ${json.error.message}`);
-      return json.result as T;
-    } catch (e) {
-      // For stub, rethrow error; caller should handle.
-      throw e;
-    } finally {
-      if (timer) clearTimeout(timer);
+      const obj = JSON.parse(json);
+      if (obj && (typeof obj.id === 'number' || typeof obj.id === 'string')) id = obj.id;
+    } catch {
+      // ignore
+    }
+
+    try {
+      const res = await this.axios.post(endpoint, json, {
+        headers: { 'Content-Type': 'application/json', ...(this.options.headers || {}) },
+        transformRequest: [(data) => data], // send as-is
+      });
+      const payload = typeof res.data === 'string' ? res.data : JSON.stringify(res.data);
+      if (this.handler) this.handler(payload);
+    } catch (err: any) {
+      // Relay as JSON-RPC error so client can reject the pending promise
+      if (this.handler) {
+        const errorPayload = {
+          jsonrpc: '2.0',
+          id,
+          error: { code: -32000, message: err?.message || 'HTTP transport error', data: { status: err?.response?.status } },
+        };
+        this.handler(JSON.stringify(errorPayload));
+      }
     }
   }
 }

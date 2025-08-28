@@ -1,76 +1,70 @@
-export interface VectorItemMeta {
-  path?: string;
-  line_start?: number | null;
-  line_end?: number | null;
-  lang?: string | null;
-  tags?: string[];
-  [key: string]: unknown;
+/**
+ * VectorStore: Simple in-memory vector store with cosine similarity.
+ *
+ * This implementation is intended for development and tests. For production,
+ * you can replace the internals with a real vector database:
+ * - Milvus: upsert/delete via insert/delete and search via collection.search
+ * - PostgreSQL + pgvector: store vectors in a table with a vector column and
+ *   use ORDER BY embedding <#> query_vector for cosine distance
+ *
+ * To integrate, keep the same public methods and route calls to your backend.
+ */
+
+export type VectorMetadata = any;
+
+export interface VectorResult {
+  id: string;
+  score: number; // cosine similarity [0..1]
+  metadata: VectorMetadata;
 }
 
-export interface VectorItem {
+interface VectorRecord {
   id: string;
   vector: number[];
-  metadata: VectorItemMeta;
-  namespace?: string | null;
-}
-
-export interface SearchFilter {
-  path_prefix?: string | null;
-  tags?: string[];
-}
-
-export interface SearchRequest {
-  embedding: number[];
-  top_k?: number;
-  namespace?: string | null;
-  filter?: SearchFilter;
-  include_vectors?: boolean;
-}
-
-export interface SearchMatch extends Omit<VectorItem, 'vector'> {
-  score: number;
-  vector?: number[];
+  metadata: VectorMetadata;
 }
 
 export class VectorStore {
-  private data: VectorItem[] = [];
+  // namespace -> array of records
+  private readonly data = new Map<string, VectorRecord[]>();
 
-  upsert(items: VectorItem[]) {
-    for (const item of items) {
-      const idx = this.data.findIndex((d) => d.id === item.id);
-      if (idx >= 0) this.data[idx] = item;
-      else this.data.push(item);
-    }
+  /**
+   * Insert or update a vector by id within a namespace.
+   */
+  async upsert(namespace: string, id: string, vector: number[], metadata: VectorMetadata): Promise<void> {
+    const key = namespace ?? '';
+    const bucket = this.data.get(key) ?? [];
+    const idx = bucket.findIndex((r) => r.id === id);
+    const rec: VectorRecord = { id, vector: vector.slice(), metadata };
+    if (idx >= 0) bucket[idx] = rec; else bucket.push(rec);
+    this.data.set(key, bucket);
   }
 
-  deleteByNamespace(namespace: string | null | undefined) {
-    this.data = this.data.filter((d) => (d.namespace ?? null) !== (namespace ?? null));
+  /**
+   * Delete an id within a namespace.
+   */
+  async delete(namespace: string, id: string): Promise<void> {
+    const key = namespace ?? '';
+    const bucket = this.data.get(key);
+    if (!bucket) return;
+    const filtered = bucket.filter((r) => r.id !== id);
+    this.data.set(key, filtered);
   }
 
-  search(req: SearchRequest): SearchMatch[] {
-    const topK = req.top_k ?? 5;
-    const namespace = req.namespace ?? null;
-    const candidates = this.data.filter((d) => (d.namespace ?? null) === namespace);
-    const filtered = candidates.filter((d) => {
-      if (req.filter?.path_prefix && d.metadata.path && !d.metadata.path.startsWith(req.filter.path_prefix)) {
-        return false;
-      }
-      if (req.filter?.tags && req.filter.tags.length) {
-        const t = d.metadata.tags ?? [];
-        if (!t.some((x) => req.filter!.tags!.includes(x))) return false;
-      }
-      return true;
-    });
-
-    const scored = filtered.map((d) => ({
-      id: d.id,
-      metadata: d.metadata,
-      namespace: d.namespace,
-      score: cosineSimilarity(req.embedding, d.vector),
-      vector: req.include_vectors ? d.vector : undefined,
+  /**
+   * Search topK most similar vectors (cosine similarity) within a namespace.
+   */
+  async search(namespace: string, vector: number[], topK: number): Promise<VectorResult[]> {
+    const key = namespace ?? '';
+    const bucket = this.data.get(key) ?? [];
+    const scored = bucket.map((r) => ({
+      id: r.id,
+      metadata: r.metadata,
+      score: cosineSimilarity(vector, r.vector),
     }));
-
-    return scored.sort((a, b) => b.score - a.score).slice(0, topK);
+    scored.sort((a, b) => b.score - a.score);
+    if (topK <= 0) return [];
+    return scored.slice(0, Math.min(topK, scored.length));
   }
 }
 
