@@ -1,62 +1,92 @@
-import { EventEmitter } from 'events';
+import type { GraphAdapter } from '../graph/GraphAdapter';
 
-export type Role = 'user' | 'assistant' | 'system';
+export type RoleTemplates = Record<string, string>;
 
-export interface ChatMessage {
+export interface VectorSearchResult {
   id: string;
-  role: Role;
-  content: string;
-  timestamp: number; // epoch ms
-  meta?: Record<string, unknown>;
+  score: number;
+  metadata: any;
 }
 
-export interface ChatServiceOptions {
-  maxHistory?: number; // limit to prevent unbounded growth
+export interface VectorStoreLike {
+  search: (namespace: string, vector: number[], topK: number) => Promise<VectorSearchResult[]>;
+}
+
+export interface LLMClientLike {
+  embed: (text: string) => Promise<number[]>;
+  chat: (prompt: string, opts?: Record<string, unknown>) => Promise<{ text: string }>;
+}
+
+export interface ChatServiceDeps {
+  vectorStore: VectorStoreLike;
+  graphAdapter?: GraphAdapter;
+  llmClient: LLMClientLike;
+  roleTemplates?: RoleTemplates;
+  namespace?: string;
 }
 
 export class ChatService {
-  private messages: ChatMessage[] = [];
-  private events = new EventEmitter();
-  private readonly maxHistory: number;
+  private readonly vectorStore: VectorStoreLike;
+  private readonly graphAdapter?: GraphAdapter;
+  private readonly llmClient: LLMClientLike;
+  private readonly roleTemplates: RoleTemplates;
+  private readonly namespace: string;
 
-  constructor(opts: ChatServiceOptions = {}) {
-    this.maxHistory = opts.maxHistory ?? 200;
+  constructor({ vectorStore, graphAdapter, llmClient, roleTemplates, namespace }: ChatServiceDeps) {
+    this.vectorStore = vectorStore;
+    this.graphAdapter = graphAdapter;
+    this.llmClient = llmClient;
+    this.roleTemplates = roleTemplates ?? {};
+    this.namespace = namespace ?? 'default';
   }
 
-  on(event: 'message', listener: (msg: ChatMessage) => void) {
-    this.events.on(event, listener);
-    return () => this.events.off(event, listener);
-  }
+  async generateResponse({ role, userText, topK = 5 }: { role: string; userText: string; topK?: number; }): Promise<{ text: string; citations: any[]; }> {
+    const queryVec = await this.llmClient.embed(userText);
+    const results = await this.vectorStore.search(this.namespace, queryVec, Math.max(1, topK));
 
-  addMessage(role: Role, content: string, meta?: Record<string, unknown>): ChatMessage {
-    const msg: ChatMessage = {
-      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      role,
-      content,
-      timestamp: Date.now(),
-      meta,
-    };
-    this.messages.push(msg);
-    if (this.messages.length > this.maxHistory) {
-      this.messages.splice(0, this.messages.length - this.maxHistory);
+    const contexts: string[] = [];
+    const citations: any[] = [];
+    for (const r of results) {
+      const md = r.metadata ?? {};
+      const t = pickTextFromMetadata(md);
+      if (t) contexts.push(t);
+      citations.push(md);
     }
-    this.events.emit('message', msg);
-    return msg;
+
+    const prompt = this.assemblePrompt(role, userText, contexts);
+    const res = await this.llmClient.chat(prompt, { role, topK, citations });
+    return { text: res.text, citations };
   }
 
-  addUserMessage(content: string, meta?: Record<string, unknown>) {
-    return this.addMessage('user', content, meta);
+  private assemblePrompt(role: string, userText: string, contexts: string[]): string {
+    const template = this.roleTemplates[role] ?? defaultTemplate;
+    const joined = contexts.join('\n---\n');
+    let out = template;
+    out = out.split('{role}').join(role);
+    out = out.split('{userText}').join(userText);
+    out = out.split('{contexts}').join(joined);
+    out = out.split('{context}').join(joined);
+    return out;
   }
+}
 
-  addAssistantMessage(content: string, meta?: Record<string, unknown>) {
-    return this.addMessage('assistant', content, meta);
-  }
+const defaultTemplate = [
+  'You are {role}.',
+  'Use the following context to answer the user question.',
+  'Context:',
+  '{contexts}',
+  'Question: {userText}',
+  'Answer:',
+].join('\n');
 
-  getHistory(): ChatMessage[] {
-    return [...this.messages];
+function pickTextFromMetadata(md: any): string | undefined {
+  if (!md) return undefined;
+  if (typeof md.text === 'string') return md.text;
+  if (typeof md.content === 'string') return md.content;
+  if (typeof md.snippet === 'string') return md.snippet;
+  if (typeof md.path === 'string' && typeof md.start === 'number' && typeof md.end === 'number') {
+    // If there is a pre-extracted chunk text
+    if (typeof md.chunk === 'string') return md.chunk;
   }
-
-  reset() {
-    this.messages = [];
-  }
+  return undefined;
 }
