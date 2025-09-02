@@ -17,6 +17,9 @@ export interface LLMClientLike {
   embed: (text: string) => Promise<number[]>;
 }
 
+export interface RetrieverLikeDoc { pageContent: string; metadata?: any }
+export interface RetrieverLike { getRelevantDocuments: (query: string, topK: number) => Promise<RetrieverLikeDoc[]> }
+
 export interface ChatServiceDeps {
   vectorStore: VectorStoreLike;
   graphAdapter?: GraphAdapter;
@@ -24,6 +27,7 @@ export interface ChatServiceDeps {
   orchestrator: ILLMOrchestrator;
   roleTemplates?: RoleTemplates;
   namespace?: string;
+  retriever?: RetrieverLike; // optional RAG retriever adapter
 }
 
 export class ChatService {
@@ -33,27 +37,37 @@ export class ChatService {
   private readonly orchestrator: ILLMOrchestrator;
   private readonly roleTemplates: RoleTemplates;
   private readonly namespace: string;
+  private readonly retriever?: RetrieverLike;
 
-  constructor({ vectorStore, graphAdapter, llmClient, orchestrator, roleTemplates, namespace }: ChatServiceDeps) {
+  constructor({ vectorStore, graphAdapter, llmClient, orchestrator, roleTemplates, namespace, retriever }: ChatServiceDeps) {
     this.vectorStore = vectorStore;
     this.graphAdapter = graphAdapter;
     this.llmClient = llmClient;
     this.orchestrator = orchestrator;
     this.roleTemplates = roleTemplates ?? {};
     this.namespace = namespace ?? 'default';
+    this.retriever = retriever;
   }
 
   async generateResponse({ projectId, role, userText, topK = 5 }: { projectId: string; role: string; userText: string; topK?: number; }): Promise<{ text: string; citations: any[]; }> {
-    const queryVec = await this.llmClient.embed(userText);
-    const results = await this.vectorStore.search(this.namespace, queryVec, Math.max(1, topK));
-
     const contexts: string[] = [];
     const citations: any[] = [];
-    for (const r of results) {
-      const md = r.metadata ?? {};
-      const t = pickTextFromMetadata(md);
-      if (t) contexts.push(t);
-      citations.push(md);
+
+    if (this.retriever) {
+      const docs = await this.retriever.getRelevantDocuments(userText, Math.max(1, topK));
+      for (const d of docs) {
+        if (d.pageContent) contexts.push(d.pageContent);
+        citations.push(d.metadata ?? {});
+      }
+    } else {
+      const queryVec = await this.llmClient.embed(userText);
+      const results = await this.vectorStore.search(this.namespace, queryVec, Math.max(1, topK));
+      for (const r of results) {
+        const md = r.metadata ?? {};
+        const t = pickTextFromMetadata(md);
+        if (t) contexts.push(t);
+        citations.push(md);
+      }
     }
 
     const systemPrompt = this.assembleSystemPrompt(role, contexts);

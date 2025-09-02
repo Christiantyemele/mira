@@ -6,11 +6,20 @@
     ]
   },
   "llm": {
+    "framework": "langchain",
     "provider": "litellm",
     "chat_model": "gpt-4o-mini",
     "embedding_model": "text-embedding-3-small",
+    "model": "gpt-4o-mini",
+    "temperature": 0.2,
     "api_base": "http://localhost:8000",
     "api_key": "${LITELLM_API_KEY}"
+  },
+  "memory": {
+    "backend": "buffer"
+  },
+  "retrieval": {
+    "topK": 5
   },
   "neo4j": {
     "uri": "bolt://localhost:7687",

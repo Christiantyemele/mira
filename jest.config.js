@@ -10,7 +10,8 @@ module.exports = {
   },
   moduleNameMapper: {
     '^vscode$': '<rootDir>/tests/mocks/vscode.ts',
-    '^pocketflow$': '<rootDir>/tests/mocks/pocketflow.ts'
+    '^pocketflow$': '<rootDir>/tests/mocks/pocketflow.ts',
+    '^langchain$': '<rootDir>/tests/mocks/langchain.ts'
   },
   collectCoverageFrom: [
     'services/**/*.ts',

@@ -2,6 +2,8 @@ import { LiteLLMClient } from '../llm/LiteLLMClient';
 import { ChatTurn, MemoryStore } from '../../storage/memory/MemoryStore';
 import { Plan, Task } from '../planner/PlannerService';
 import { ChainEngine, ToolDef } from '../llm/ChainEngine';
+import path from 'path';
+import fs from 'fs';
 
 export type OrchestratorContext = {
   sessionId: string; // key for MemoryStore per chat/workspace
@@ -26,12 +28,22 @@ export class LLMOrchestrator implements ILLMOrchestrator {
     if (engine) {
       this.engine = engine;
     } else {
-      // Lazy load to avoid forcing 'pocketflow' resolution in environments/tests that mock it
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const { default: PocketFlowChainEngine } = require('../llm/PocketFlowChainEngine');
-      this.engine = new PocketFlowChainEngine();
+      // Decide engine based on config.llm.framework (default: pocketflow)
+      const cfg = safeLoadConfig();
+      const framework = (cfg?.llm?.framework ?? 'pocketflow').toLowerCase();
+      if (framework === 'langchain') {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const { default: LangChainEngine } = require('../llm/LangChainEngine');
+        this.engine = new LangChainEngine();
+      } else {
+        // Lazy load pocketflow adapter to avoid forcing resolution when not needed
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const { default: PocketFlowChainEngine } = require('../llm/PocketFlowChainEngine');
+        this.engine = new PocketFlowChainEngine();
+      }
     }
   }
+
 
   async orchestrateChat(userMessage: string, context: OrchestratorContext): Promise<{ reply: string; history: ChatTurn[] }> {
     const sessionId = context.sessionId;
@@ -91,3 +103,23 @@ export class LLMOrchestrator implements ILLMOrchestrator {
 }
 
 export default LLMOrchestrator;
+
+// Helper to load config safely at runtime without hard import
+function safeLoadConfig(): any {
+  try {
+    const candidates = [
+      path.resolve(__dirname, '../../config/mira.json'),
+      path.resolve(__dirname, '../../../config/mira.json'),
+      path.resolve(process.cwd(), 'config/mira.json')
+    ];
+    for (const c of candidates) {
+      if (fs.existsSync(c)) {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        return require(c);
+      }
+    }
+  } catch (_e) {
+    // ignore
+  }
+  return {};
+}

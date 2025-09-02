@@ -1,4 +1,8 @@
 import type { ToolMeta } from '../mcp/Client';
+import type { TerminalService } from '../terminal/TerminalService';
+import type { VectorStore } from '../../storage/vector-db/VectorStore';
+import type { LiteLLMClient } from '../llm/LiteLLMClient';
+import { StructuredTool, createTerminalTool, createVectorSearchTool } from './langchain/ToolAdapters';
 
 export class ToolRegistry {
   private tools = new Map<string, ToolMeta>();
@@ -44,5 +48,21 @@ export class ToolRegistry {
 
   clear() {
     this.tools.clear();
+  }
+
+  buildLangChainTools(deps: { terminal?: TerminalService; vectorStore?: VectorStore; embedder?: LiteLLMClient; namespace?: string; defaultTopK?: number }): StructuredTool[] {
+    const out: StructuredTool[] = [];
+    if (deps.terminal) {
+      out.push(createTerminalTool(deps.terminal));
+    }
+    if (deps.vectorStore && deps.embedder) {
+      out.push(createVectorSearchTool({
+        vectorStore: deps.vectorStore as any,
+        embedder: deps.embedder as any,
+        namespace: deps.namespace,
+        defaultTopK: deps.defaultTopK
+      }));
+    }
+    return out;
   }
 }
