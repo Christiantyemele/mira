@@ -15,7 +15,8 @@
     "services/**/*",
     "storage/**/*",
     "tests/**/*",
-    "config/**/*"
+    "config/**/*",
+    "types/**/*"
   ],
   "exclude": [
     "extensions/**/*",

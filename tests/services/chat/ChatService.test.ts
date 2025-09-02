@@ -1,10 +1,11 @@
 import { ChatService } from '../../../services/chat/ChatService';
 
 describe('ChatService', () => {
-  it('assembles prompt with top contexts and returns mock LLM response with citations', async () => {
+  it('delegates chat to orchestrator with systemPrompt from contexts and returns reply with citations', async () => {
     const namespace = 'ns1';
     const userText = 'How to bake?';
     const role = 'helper';
+    const projectId = 'proj-123';
     const topK = 2;
 
     const searchResults = [
@@ -18,30 +19,35 @@ describe('ChatService', () => {
 
     const llmClient = {
       embed: jest.fn().mockResolvedValue([0.1, 0.2, 0.3]),
-      chat: jest.fn().mockResolvedValue({ text: 'MOCK LLM ANSWER' }),
+    };
+
+    const orchestrator = {
+      orchestrateChat: jest.fn().mockResolvedValue({ reply: 'MOCK ORCH ANSWER', history: [] })
     };
 
     const roleTemplates = {
       helper: 'ROLE: {role}\nCONTEXTS:\n{contexts}\nUSER:\n{userText}\n',
     };
 
-    const svc = new ChatService({ vectorStore: vectorStore as any, llmClient: llmClient as any, roleTemplates, namespace });
+    const svc = new ChatService({ vectorStore: vectorStore as any, llmClient: llmClient as any, orchestrator: orchestrator as any, roleTemplates, namespace });
 
-    const res = await svc.generateResponse({ role, userText, topK });
+    const res = await svc.generateResponse({ projectId, role, userText, topK });
 
     expect(llmClient.embed).toHaveBeenCalledWith(userText);
     expect(vectorStore.search).toHaveBeenCalledWith(namespace, [0.1, 0.2, 0.3], topK);
 
-    // Verify the prompt assembled contains context snippets
-    expect(llmClient.chat).toHaveBeenCalledTimes(1);
-    const promptPassed = (llmClient.chat as jest.Mock).mock.calls[0][0] as string;
-    expect(promptPassed).toContain('ROLE: helper');
-    expect(promptPassed).toContain('Use flour and water');
-    expect(promptPassed).toContain('Preheat oven to 180C');
-    expect(promptPassed).toContain('USER:');
-    expect(promptPassed).toContain(userText);
+    // Verify the systemPrompt assembled contains context snippets and role, and orchestrator is called
+    expect(orchestrator.orchestrateChat).toHaveBeenCalledTimes(1);
+    const [passedUserText, ctx] = (orchestrator.orchestrateChat as jest.Mock).mock.calls[0];
+    expect(passedUserText).toBe(userText);
+    expect(ctx.sessionId).toBe(projectId);
+    expect(ctx.role).toBe('helper');
+    expect(ctx.systemPrompt).toContain('ROLE: helper');
+    expect(ctx.systemPrompt).toContain('Use flour and water');
+    expect(ctx.systemPrompt).toContain('Preheat oven to 180C');
+    expect(ctx.systemPrompt).toContain('USER:'); // template includes label (userText removed)
 
     // Response and citations
-    expect(res).toEqual({ text: 'MOCK LLM ANSWER', citations: searchResults.map(r => r.metadata) });
+    expect(res).toEqual({ text: 'MOCK ORCH ANSWER', citations: searchResults.map(r => r.metadata) });
   });
 });
