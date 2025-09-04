@@ -1,9 +1,32 @@
 import * as vscode from 'vscode';
 
+// Import orchestrator and dependencies
+import LLMOrchestrator, { OrchestratorContext } from '../../../../services/orchestrator/LLMOrchestrator';
+import { LiteLLMClient } from '../../../../services/llm/LiteLLMClient';
+import { MemoryStore } from '../../../../storage/memory/MemoryStore';
+
+// Singleton orchestrator for the extension session
+let orchestrator: LLMOrchestrator | undefined;
+
+function getOrchestrator(): LLMOrchestrator {
+  if (!orchestrator) {
+    // In a real extension, these would be shared singletons
+    const memory = new MemoryStore();
+    const client = new LiteLLMClient({ mode: 'mock', embedDim: 16 });
+    orchestrator = new LLMOrchestrator(client, memory);
+  }
+  return orchestrator;
+}
+
 export class ChatViewProvider implements vscode.WebviewViewProvider {
   private _view?: vscode.WebviewView;
+  private sessionId: string;
 
-  constructor(private readonly context: vscode.ExtensionContext) {}
+  constructor(private readonly context: vscode.ExtensionContext) {
+    // Use a persistent sessionId for the user/workspace
+    this.sessionId = context.globalState.get<string>('mira.chat.sessionId') || String(Date.now());
+    context.globalState.update('mira.chat.sessionId', this.sessionId);
+  }
 
   resolveWebviewView(webviewView: vscode.WebviewView): void | Thenable<void> {
     this._view = webviewView;
@@ -12,9 +35,20 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     };
     webviewView.webview.html = this.getHtml(webviewView.webview);
 
-    webviewView.webview.onDidReceiveMessage((msg) => {
+    webviewView.webview.onDidReceiveMessage(async (msg) => {
       if (msg?.type === 'user') {
-        vscode.window.showInformationMessage(`User said: ${msg.text}`);
+        const userText = msg.text;
+        // Optionally, show a loading indicator in the UI
+        this.postAssistantMessage('...');
+        try {
+          const orchestrator = getOrchestrator();
+          const context: OrchestratorContext = { sessionId: this.sessionId };
+          const result = await orchestrator.orchestrateChat(userText, context);
+          // Remove the loading indicator and show the real reply
+          this.postAssistantMessage(result.reply);
+        } catch (err: any) {
+          this.postAssistantMessage('Error: ' + (err?.message || String(err)));
+        }
       }
     });
   }
@@ -66,9 +100,15 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
               prompt.value = '';
             });
 
+            prompt.addEventListener('keydown', (e) => {
+              if (e.key === 'Enter') send.click();
+            });
+
             window.addEventListener('message', (event) => {
               const msg = event.data;
               if (msg?.type === 'assistant') {
+                // Remove any previous loading indicator
+                removeLoading();
                 addMsg('assistant', msg.text);
               }
             });
@@ -79,6 +119,17 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
               el.textContent = text;
               messages.appendChild(el);
               messages.scrollTop = messages.scrollHeight;
+            }
+
+            function removeLoading() {
+              // Remove any assistant message with just "..."
+              const nodes = messages.querySelectorAll('.msg.assistant');
+              for (let i = nodes.length - 1; i >= 0; --i) {
+                if (nodes[i].textContent === '...') {
+                  nodes[i].remove();
+                  break;
+                }
+              }
             }
           </script>
         </body>

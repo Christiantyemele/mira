@@ -26,9 +26,20 @@
       { "command": "mira.planner.createPlan", "title": "Mira: Create Plan" },
       { "command": "mira.planner.updateTask", "title": "Mira: Update Task" }
     ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "miraSidebar",
+          "title": "Mira",
+          "icon": "images/architecture.drawio.xml"
+        }
+      ]
+    },
     "views": {
+      "miraSidebar": [
+        { "id": "miraChatView", "name": "Mira Chat" }
+      ],
       "explorer": [
-        { "id": "mira.chat", "name": "Mira Chat" },
         { "id": "mira.terminal", "name": "Mira Terminal Sessions" },
         { "id": "mira.planner", "name": "Mira Planner" }
       ]

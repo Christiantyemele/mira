@@ -46,7 +46,7 @@ export function activate(context: vscode.ExtensionContext) {
   const plannerProvider = new PlannerViewProvider();
 
   context.subscriptions.push(
-    vscode.window.registerWebviewViewProvider('mira.chat', chatProvider),
+    vscode.window.registerWebviewViewProvider('miraChatView', chatProvider),
     vscode.window.registerWebviewViewProvider('mira.terminal', terminalProvider),
     vscode.window.registerWebviewViewProvider('mira.planner', plannerProvider)
   );
