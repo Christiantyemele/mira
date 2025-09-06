@@ -13,9 +13,10 @@
   },
   "dependencies": {
     "axios": "^1.7.7",
-    "neo4j-driver": "^5.23.0",
-    "ws": "^8.18.0",
     "langchain": "^0.2.14",
+    "neo4j-driver": "^5.23.0",
+    "pocketflow": "^1.0.4",
+    "ws": "^8.18.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {

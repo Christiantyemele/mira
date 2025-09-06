@@ -1,5 +1,4 @@
 import { ChatTurn } from '../../storage/memory/MemoryStore';
-
 export type ToolDef = {
   name: string;
   description?: string;

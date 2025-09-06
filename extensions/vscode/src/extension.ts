@@ -130,6 +130,14 @@ export function activate(context: vscode.ExtensionContext) {
     plannerCreateCmd,
     plannerUpdateTaskCmd
   );
+  
+  // Register mira.chat.focus command to reveal the chat view
+  const chatFocusCmd = vscode.commands.registerCommand('mira.chat.focus', async () => {
+    // Reveal the chat view in the sidebar
+    await vscode.commands.executeCommand('workbench.view.extension.miraSidebar');
+    await vscode.commands.executeCommand('miraChatView.focus');
+  });
+  context.subscriptions.push(chatFocusCmd);
 }
 
 export function deactivate() {

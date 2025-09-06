@@ -68,21 +68,131 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           <meta name="viewport" content="width=device-width, initial-scale=1.0" />
           <title>Mira Chat</title>
           <style>
-            body { font-family: var(--vscode-font-family); padding: 0; margin: 0; }
-            #container { display: flex; flex-direction: column; height: 100vh; }
-            #messages { flex: 1; overflow: auto; padding: 8px; }
-            .msg { margin: 6px 0; padding: 6px 8px; border-radius: 6px; }
-            .user { background: var(--vscode-editor-inactiveSelectionBackground); }
-            .assistant { background: var(--vscode-editor-selectionBackground); }
-            #inputRow { display: flex; gap: 6px; padding: 8px; border-top: 1px solid var(--vscode-editorWidget-border); }
-            input { flex: 1; }
+            body {
+              font-family: var(--vscode-font-family);
+              padding: 0;
+              margin: 0;
+              background: var(--vscode-sideBar-background, #1e1e1e);
+            }
+            #container {
+              display: flex;
+              flex-direction: column;
+              height: 100vh;
+              background: linear-gradient(180deg, var(--vscode-sideBar-background, #1e1e1e) 60%, var(--vscode-editor-background, #23272e) 100%);
+            }
+            #messages {
+              flex: 1;
+              overflow: auto;
+              padding: 16px 12px 8px 12px;
+              display: flex;
+              flex-direction: column;
+              gap: 10px;
+            }
+            .msg-row {
+              display: flex;
+              align-items: flex-end;
+              gap: 8px;
+            }
+            .msg-row.user {
+              flex-direction: row-reverse;
+            }
+            .avatar {
+              width: 32px;
+              height: 32px;
+              border-radius: 50%;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              font-size: 20px;
+              background: var(--vscode-editorWidget-background, #252526);
+              box-shadow: 0 1px 4px 0 rgba(0,0,0,0.10);
+              border: 1.5px solid var(--vscode-editorWidget-border, #333);
+              margin-bottom: 2px;
+              flex-shrink: 0;
+            }
+            .msg {
+              max-width: 70%;
+              padding: 10px 14px;
+              border-radius: 16px;
+              font-size: 1.05em;
+              box-shadow: 0 2px 8px 0 rgba(0,0,0,0.08);
+              word-break: break-word;
+              line-height: 1.6;
+              border: 1px solid transparent;
+              transition: background 0.2s;
+            }
+            .msg.user {
+              background: var(--vscode-editor-inactiveSelectionBackground, #2a2d2e);
+              color: var(--vscode-editor-foreground, #fff);
+              border-top-right-radius: 4px;
+              border-bottom-right-radius: 18px;
+              border-top-left-radius: 18px;
+              border-bottom-left-radius: 18px;
+              border-color: var(--vscode-editorWidget-border, #333);
+              margin-left: 32px;
+            }
+            .msg.assistant {
+              background: var(--vscode-editor-selectionBackground, #3a3d41);
+              color: var(--vscode-editor-foreground, #fff);
+              border-top-left-radius: 4px;
+              border-bottom-left-radius: 18px;
+              border-top-right-radius: 18px;
+              border-bottom-right-radius: 18px;
+              border-color: var(--vscode-editorWidget-border, #333);
+              margin-right: 32px;
+            }
+            #inputRow {
+              display: flex;
+              gap: 8px;
+              padding: 12px;
+              border-top: 1.5px solid var(--vscode-editorWidget-border, #333);
+              background: var(--vscode-editorWidget-background, #23272e);
+              box-shadow: 0 -2px 8px 0 rgba(0,0,0,0.04);
+            }
+            #prompt {
+              flex: 1;
+              font-size: 1em;
+              padding: 8px 12px;
+              border-radius: 8px;
+              border: 1.5px solid var(--vscode-editorWidget-border, #333);
+              background: var(--vscode-input-background, #23272e);
+              color: var(--vscode-input-foreground, #fff);
+              outline: none;
+              transition: border 0.2s;
+            }
+            #prompt:focus {
+              border-color: var(--vscode-editor-selectionHighlightBackground, #0078d4);
+            }
+            #send {
+              font-size: 1em;
+              padding: 8px 18px;
+              border-radius: 8px;
+              border: none;
+              background: var(--vscode-button-background, #0078d4);
+              color: var(--vscode-button-foreground, #fff);
+              cursor: pointer;
+              transition: background 0.2s;
+              font-weight: 600;
+              box-shadow: 0 1px 4px 0 rgba(0,0,0,0.10);
+            }
+            #send:hover {
+              background: var(--vscode-button-hoverBackground, #005fa3);
+            }
+            ::-webkit-scrollbar {
+              width: 8px;
+              background: transparent;
+            }
+            ::-webkit-scrollbar-thumb {
+              background: var(--vscode-scrollbarSlider-background, #444);
+              border-radius: 4px;
+            }
           </style>
         </head>
         <body>
           <div id="container">
             <div id="messages"></div>
             <div id="inputRow">
-              <input id="prompt" type="text" placeholder="Ask Mira..." />
+              <input id="prompt" type="text" placeholder="Ask Mira..." autocomplete="off" />
               <button id="send">Send</button>
             </div>
           </div>
@@ -114,10 +224,32 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             });
 
             function addMsg(kind, text) {
+              // Create row for avatar + bubble
+              const row = document.createElement('div');
+              row.className = 'msg-row ' + kind;
+              // Avatar
+              const avatar = document.createElement('div');
+              avatar.className = 'avatar';
+              if (kind === 'user') {
+                avatar.textContent = '🧑';
+                avatar.title = 'You';
+              } else {
+                avatar.textContent = '🤖';
+                avatar.title = 'Mira';
+              }
+              // Bubble
               const el = document.createElement('div');
               el.className = 'msg ' + kind;
               el.textContent = text;
-              messages.appendChild(el);
+              // Compose
+              if (kind === 'user') {
+                row.appendChild(avatar);
+                row.appendChild(el);
+              } else {
+                row.appendChild(avatar);
+                row.appendChild(el);
+              }
+              messages.appendChild(row);
               messages.scrollTop = messages.scrollHeight;
             }
 

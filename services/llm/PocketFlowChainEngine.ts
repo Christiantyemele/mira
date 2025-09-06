@@ -1,12 +1,14 @@
-import PocketFlow from 'pocketflow';
+const PocketFlow: any = require('pocketflow');
 import { ChainEngine, ToolDef } from './ChainEngine';
 import { ChatTurn } from '../../storage/memory/MemoryStore';
+// @ts-ignore
+import type { ChatMessage } from 'pocketflow';
 
 export class PocketFlowChainEngine implements ChainEngine {
-  private readonly pf: PocketFlow;
+  private readonly pf: any;
 
-  constructor(pfInstance?: PocketFlow) {
-    this.pf = pfInstance ?? new PocketFlow();
+  constructor(pfInstance?: any) {
+    this.pf = pfInstance ?? PocketFlow();
   }
 
   async runChatChain(input: {
@@ -40,6 +42,18 @@ export class PocketFlowChainEngine implements ChainEngine {
       context: { role: input.role, extraContext: input.extraContext }
     });
     return { outline: res.outline };
+  }
+  async summarizeDocuments(input: { documents: string[]; systemPrompt?: string }): Promise<{ summary: string }> {
+    const systemPrompt = input.systemPrompt ?? "Summarize the following documents:";
+    const messages: ChatMessage[] = input.documents.map((doc, i) => ({
+      role: "user" as const,
+      content: `Document ${i + 1}:\n${doc}`
+    }));
+    const res = await this.pf.chat({
+      systemPrompt,
+      messages
+    });
+    return { summary: res.text };
   }
 }
 

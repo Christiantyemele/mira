@@ -9,7 +9,7 @@
     "onCommand:mira.connect",
     "onCommand:mira.listTools",
     "onCommand:mira.executePrompt",
-    "onView:mira.chat"
+    "onView:miraChatView"
   ],
   "main": "./out/extension.js",
   "contributes": {
@@ -31,7 +31,7 @@
         {
           "id": "miraSidebar",
           "title": "Mira",
-          "icon": "images/architecture.drawio.xml"
+          "icon": "images/mira-icon.svg"
         }
       ]
     },

@@ -1,0 +1,14 @@
+<!--
+  Mira Assistant Icon
+  - Distinctive, modern, and easily recognizable for VSCode sidebar.
+  - Uses a stylized "M" with a chat bubble motif and a vibrant color.
+-->
+<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="128" height="128" rx="32" fill="#3B82F6"/>
+  <g>
+    <path d="M32 96V40a8 8 0 0 1 8-8h12a8 8 0 0 1 8 8v24l12-16a8 8 0 0 1 13 0l12 16V40a8 8 0 0 1 8-8h12a8 8 0 0 1 8 8v56a8 8 0 0 1-8 8H40a8 8 0 0 1-8-8z" fill="#fff"/>
+    <ellipse cx="64" cy="88" rx="8" ry="6" fill="#3B82F6"/>
+    <rect x="48" y="104" width="32" height="8" rx="4" fill="#fff" opacity="0.7"/>
+  </g>
+  <circle cx="96" cy="40" r="8" fill="#FBBF24"/>
+</svg>
