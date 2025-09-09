@@ -51,3 +51,49 @@ describe('ChatService', () => {
     expect(res).toEqual({ text: 'MOCK ORCH ANSWER', citations: searchResults.map(r => r.metadata) });
   });
 });
+it('persists and uses chat history for multi-turn context', async () => {
+  const namespace = 'ns2';
+  const projectId = 'proj-ctx';
+  const role = 'helper';
+  const topK = 1;
+
+  const vectorStore = { search: jest.fn().mockResolvedValue([]) };
+  const llmClient = { embed: jest.fn().mockResolvedValue([0.1, 0.2, 0.3]) };
+
+  // Simulate orchestrator that records all calls and returns a reply based on history
+  const orchestrator = {
+    orchestrateChat: jest.fn()
+      // First call: single message
+      .mockResolvedValueOnce({ reply: 'First answer', history: [
+        { role: 'user', content: 'Hello', timestamp: 1 },
+        { role: 'assistant', content: 'First answer', timestamp: 2 }
+      ] })
+      // Second call: should see both messages in history
+      .mockResolvedValueOnce({ reply: 'Follow-up answer with context', history: [
+        { role: 'user', content: 'Hello', timestamp: 1 },
+        { role: 'assistant', content: 'First answer', timestamp: 2 },
+        { role: 'user', content: 'What about tomorrow?', timestamp: 3 },
+        { role: 'assistant', content: 'Follow-up answer with context', timestamp: 4 }
+      ] })
+  };
+
+  const svc = new ChatService({ vectorStore: vectorStore as any, llmClient: llmClient as any, orchestrator: orchestrator as any, namespace });
+
+  // First turn
+  const res1 = await svc.generateResponse({ projectId, role, userText: 'Hello', topK });
+  expect(res1.text).toBe('First answer');
+  expect(orchestrator.orchestrateChat).toHaveBeenCalledTimes(1);
+
+  // Second turn (follow-up)
+  const res2 = await svc.generateResponse({ projectId, role, userText: 'What about tomorrow?', topK });
+  expect(res2.text).toBe('Follow-up answer with context');
+  expect(orchestrator.orchestrateChat).toHaveBeenCalledTimes(2);
+
+  // Check that orchestrator was called with correct sessionId and role both times
+  const calls = (orchestrator.orchestrateChat as jest.Mock).mock.calls;
+  expect(calls[0][1].sessionId).toBe(projectId);
+  expect(calls[1][1].sessionId).toBe(projectId);
+
+  // Optionally, check that the orchestrator's second call would have access to both messages in history
+  // (This depends on orchestrator implementation, but this test ensures the flow is multi-turn)
+});

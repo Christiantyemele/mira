@@ -19,4 +19,13 @@ export interface ChainEngine {
     role?: string;
     extraContext?: string;
   }): Promise<{ outline: string }>;
+  runChatChainStream?(
+    input: {
+      systemPrompt?: string;
+      messages: ChatTurn[];
+      role?: string;
+      tools?: ToolDef[];
+      extraContext?: string;
+    }
+  ): AsyncGenerator<string, void, unknown>;
 }

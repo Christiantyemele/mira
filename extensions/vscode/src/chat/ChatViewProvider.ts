@@ -1,19 +1,45 @@
 import * as vscode from 'vscode';
 
-// Import orchestrator and dependencies
-import LLMOrchestrator, { OrchestratorContext } from '../../../../services/orchestrator/LLMOrchestrator';
-import { LiteLLMClient } from '../../../../services/llm/LiteLLMClient';
-import { MemoryStore } from '../../../../storage/memory/MemoryStore';
+// Import types only to avoid runtime path issues; implement dynamic requires at runtime
+import type { OrchestratorContext } from '../../../../services/orchestrator/LLMOrchestrator';
+import * as path from 'path';
 
 // Singleton orchestrator for the extension session
-let orchestrator: LLMOrchestrator | undefined;
+let orchestrator: any | undefined;
 
-function getOrchestrator(): LLMOrchestrator {
+/**
+ * Loads the orchestrator and its dependencies using robust path resolution.
+ * Uses context.asAbsolutePath to resolve paths from the extension root.
+ * Provides clear error handling and user feedback if modules are missing.
+ */
+function getOrchestrator(context: vscode.ExtensionContext, postError?: (msg: string) => void): any {
   if (!orchestrator) {
-    // In a real extension, these would be shared singletons
-    const memory = new MemoryStore();
-    const client = new LiteLLMClient({ mode: 'mock', embedDim: 16 });
-    orchestrator = new LLMOrchestrator(client, memory);
+    try {
+      // Use context.asAbsolutePath to resolve from extension root
+      const LLMPath = context.asAbsolutePath('out/services/orchestrator/LLMOrchestrator.js');
+      const LiteLLMClientPath = context.asAbsolutePath('out/services/llm/LiteLLMClient.js');
+      const MemoryStorePath = context.asAbsolutePath('out/storage/memory/MemoryStore.js');
+
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const LLM = require(LLMPath);
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { LiteLLMClient } = require(LiteLLMClientPath);
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { MemoryStore } = require(MemoryStorePath);
+
+      const memory = new MemoryStore();
+      const client = new LiteLLMClient({ mode: 'mock', embedDim: 16 });
+      orchestrator = new LLM.default(client, memory);
+    } catch (err: any) {
+      const msg =
+        'Mira failed to load required modules. ' +
+        'Please ensure the extension is built correctly. ' +
+        'Error: ' + (err?.message || String(err));
+      if (postError) postError(msg);
+      // Also log to VS Code output for diagnostics
+      console.error('[Mira Chat] Module load error:', err);
+      orchestrator = undefined;
+    }
   }
   return orchestrator;
 }
@@ -38,16 +64,51 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
     webviewView.webview.onDidReceiveMessage(async (msg) => {
       if (msg?.type === 'user') {
         const userText = msg.text;
-        // Optionally, show a loading indicator in the UI
-        this.postAssistantMessage('...');
+        // Start streaming the assistant's response
         try {
-          const orchestrator = getOrchestrator();
+          const orchestrator = getOrchestrator(
+            this.context,
+            (errMsg) => this._view?.webview.postMessage({ type: 'assistant', text: errMsg })
+          );
+          if (!orchestrator) {
+            this._view?.webview.postMessage({ type: 'assistant-done' });
+            return;
+          }
           const context: OrchestratorContext = { sessionId: this.sessionId };
-          const result = await orchestrator.orchestrateChat(userText, context);
-          // Remove the loading indicator and show the real reply
-          this.postAssistantMessage(result.reply);
+          let hadChunk = false;
+          let errorOccurred = false;
+          // Remove any previous loading indicator
+          this._view?.webview.postMessage({ type: 'assistant-stream-start' });
+          for await (const chunk of orchestrator.orchestrateChatStream(userText, context)) {
+            hadChunk = true;
+            this._view?.webview.postMessage({ type: 'assistant-stream', text: chunk });
+          }
+          this._view?.webview.postMessage({ type: 'assistant-done' });
         } catch (err: any) {
-          this.postAssistantMessage('Error: ' + (err?.message || String(err)));
+          this._view?.webview.postMessage({ type: 'assistant-done' });
+          this._view?.webview.postMessage({ type: 'assistant', text: 'Error: ' + (err?.message || String(err)) });
+        }
+      }
+      if (msg?.type === 'greeting') {
+        try {
+          const orchestrator = getOrchestrator(
+            this.context,
+            (errMsg) => this._view?.webview.postMessage({ type: 'greeting', text: errMsg })
+          );
+          if (!orchestrator) {
+            this._view?.webview.postMessage({ type: 'greeting-done' });
+            return;
+          }
+          const context: OrchestratorContext = { sessionId: this.sessionId };
+          let greeting = '';
+          for await (const chunk of orchestrator.orchestrateChatStream('Say hello and introduce yourself as Mira, the AI assistant for VS Code.', context)) {
+            greeting += chunk;
+            this._view?.webview.postMessage({ type: 'greeting-stream', text: chunk });
+          }
+          this._view?.webview.postMessage({ type: 'greeting-done' });
+        } catch (err: any) {
+          this._view?.webview.postMessage({ type: 'greeting-done' });
+          this._view?.webview.postMessage({ type: 'greeting', text: 'Hello! (AI error)' });
         }
       }
     });
@@ -68,25 +129,33 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
           <meta name="viewport" content="width=device-width, initial-scale=1.0" />
           <title>Mira Chat</title>
           <style>
-            body {
-              font-family: var(--vscode-font-family);
+            html, body {
+              height: 100%;
+              width: 100%;
               padding: 0;
               margin: 0;
+              font-family: var(--vscode-font-family);
               background: var(--vscode-sideBar-background, #1e1e1e);
             }
             #container {
               display: flex;
               flex-direction: column;
-              height: 100vh;
+              height: 100%;
+              width: 100%;
+              min-height: 0;
+              min-width: 0;
               background: linear-gradient(180deg, var(--vscode-sideBar-background, #1e1e1e) 60%, var(--vscode-editor-background, #23272e) 100%);
             }
             #messages {
-              flex: 1;
-              overflow: auto;
+              flex: 1 1 0%;
+              min-height: 0;
+              min-width: 0;
+              overflow-y: auto;
               padding: 16px 12px 8px 12px;
               display: flex;
               flex-direction: column;
               gap: 10px;
+              background: transparent;
             }
             .msg-row {
               display: flex;
@@ -148,6 +217,9 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
               border-top: 1.5px solid var(--vscode-editorWidget-border, #333);
               background: var(--vscode-editorWidget-background, #23272e);
               box-shadow: 0 -2px 8px 0 rgba(0,0,0,0.04);
+              position: sticky;
+              bottom: 0;
+              z-index: 2;
             }
             #prompt {
               flex: 1;
@@ -202,6 +274,12 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
             const prompt = document.getElementById('prompt');
             const send = document.getElementById('send');
 
+            // Initial greeting (once per load)
+            if (!messages.dataset.greeted) {
+              vscode.postMessage({ type: 'greeting' });
+              messages.dataset.greeted = '1';
+            }
+
             send.addEventListener('click', () => {
               const text = prompt.value.trim();
               if (!text) return;
@@ -219,6 +297,25 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
               if (msg?.type === 'assistant') {
                 // Remove any previous loading indicator
                 removeLoading();
+                addMsg('assistant', msg.text);
+              }
+              if (msg?.type === 'assistant-stream-start') {
+                removeLoading();
+                startStreamingAssistantMsg();
+              }
+              if (msg?.type === 'assistant-stream') {
+                appendStreamingAssistantMsg(msg.text);
+              }
+              if (msg?.type === 'assistant-done') {
+                finalizeStreamingAssistantMsg();
+              }
+              if (msg?.type === 'greeting-stream') {
+                appendStreamingGreetingMsg(msg.text);
+              }
+              if (msg?.type === 'greeting-done') {
+                finalizeStreamingGreetingMsg();
+              }
+              if (msg?.type === 'greeting') {
                 addMsg('assistant', msg.text);
               }
             });
@@ -242,15 +339,69 @@ export class ChatViewProvider implements vscode.WebviewViewProvider {
               el.className = 'msg ' + kind;
               el.textContent = text;
               // Compose
-              if (kind === 'user') {
-                row.appendChild(avatar);
-                row.appendChild(el);
-              } else {
-                row.appendChild(avatar);
-                row.appendChild(el);
-              }
+              row.appendChild(avatar);
+              row.appendChild(el);
               messages.appendChild(row);
               messages.scrollTop = messages.scrollHeight;
+            }
+
+            // Streaming assistant message helpers
+            let streamingAssistantRow = null;
+            let streamingAssistantBubble = null;
+            function startStreamingAssistantMsg() {
+              streamingAssistantRow = document.createElement('div');
+              streamingAssistantRow.className = 'msg-row assistant';
+              const avatar = document.createElement('div');
+              avatar.className = 'avatar';
+              avatar.textContent = '🤖';
+              avatar.title = 'Mira';
+              streamingAssistantBubble = document.createElement('div');
+              streamingAssistantBubble.className = 'msg assistant';
+              streamingAssistantBubble.textContent = '';
+              streamingAssistantRow.appendChild(avatar);
+              streamingAssistantRow.appendChild(streamingAssistantBubble);
+              messages.appendChild(streamingAssistantRow);
+              messages.scrollTop = messages.scrollHeight;
+            }
+            function appendStreamingAssistantMsg(chunk) {
+              if (streamingAssistantBubble) {
+                streamingAssistantBubble.textContent += chunk;
+                messages.scrollTop = messages.scrollHeight;
+              }
+            }
+            function finalizeStreamingAssistantMsg() {
+              streamingAssistantRow = null;
+              streamingAssistantBubble = null;
+            }
+
+            // Streaming greeting message helpers
+            let streamingGreetingRow = null;
+            let streamingGreetingBubble = null;
+            function startStreamingGreetingMsg() {
+              streamingGreetingRow = document.createElement('div');
+              streamingGreetingRow.className = 'msg-row assistant';
+              const avatar = document.createElement('div');
+              avatar.className = 'avatar';
+              avatar.textContent = '🤖';
+              avatar.title = 'Mira';
+              streamingGreetingBubble = document.createElement('div');
+              streamingGreetingBubble.className = 'msg assistant';
+              streamingGreetingBubble.textContent = '';
+              streamingGreetingRow.appendChild(avatar);
+              streamingGreetingRow.appendChild(streamingGreetingBubble);
+              messages.appendChild(streamingGreetingRow);
+              messages.scrollTop = messages.scrollHeight;
+            }
+            function appendStreamingGreetingMsg(chunk) {
+              if (!streamingGreetingBubble) {
+                startStreamingGreetingMsg();
+              }
+              streamingGreetingBubble.textContent += chunk;
+              messages.scrollTop = messages.scrollHeight;
+            }
+            function finalizeStreamingGreetingMsg() {
+              streamingGreetingRow = null;
+              streamingGreetingBubble = null;
             }
 
             function removeLoading() {

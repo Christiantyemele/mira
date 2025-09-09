@@ -2,16 +2,20 @@
   "name": "mira-assistant",
   "displayName": "Mira Assistant",
   "publisher": "mira",
-  "version": "0.0.1",
+  "version": "0.1.1",
+  "scripts": {
+    "build": "tsc -p ."
+  },
   "engines": { "vscode": "^1.92.0" },
   "categories": ["Other"],
   "activationEvents": [
     "onCommand:mira.connect",
     "onCommand:mira.listTools",
     "onCommand:mira.executePrompt",
+    "onCommand:mira.openChatView",
     "onView:miraChatView"
   ],
-  "main": "./out/extension.js",
+  "main": "./out/extensions/vscode/src/extension.js",
   "contributes": {
     "commands": [
       { "command": "mira.connect", "title": "Mira: Connect" },

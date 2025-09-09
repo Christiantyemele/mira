@@ -122,3 +122,23 @@ Security
 - Implementation Plan (this project): docs/implementation-plan.md
 - MCP API Contracts: docs/api-contract.md
 - Role Templates: docs/roles.md
+
+## Manual Verification Steps for Mira Assistant VSCode Extension
+
+1. **Open the Mira Chat View:**
+   - In VSCode, open the Command Palette (`Ctrl+Shift+P` or `Cmd+Shift+P` on Mac).
+   - Type and select `Mira: Open Chat View` or click the Mira icon in the Activity Bar and select "Mira Chat".
+
+2. **Send Prompts:**
+   - In the Mira Chat view, enter a prompt (e.g., "Hello, Mira!" or "List available tools").
+   - Press Enter or click the send button.
+
+3. **Observe Functionality:**
+   - Confirm that the chat interface responds appropriately.
+   - If any required modules are missing, ensure that a clear error message is displayed in the chat view (not just in the developer console).
+
+4. **Error Handling:**
+   - Optionally, simulate a missing module (e.g., by renaming a dependency in the extension's `node_modules`) and repeat step 3 to verify that errors are surfaced to the user.
+
+5. **Report:**
+   - Note any issues, unexpected behavior, or lack of error messages.

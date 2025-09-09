@@ -22,6 +22,13 @@ class HttpTransport implements NoopTransport {
 }
 
 export function activate(context: vscode.ExtensionContext) {
+  // Auto-reveal the chat view in the sidebar on activation for always-accessible UX
+  setTimeout(() => {
+    vscode.commands.executeCommand('workbench.view.extension.miraSidebar').then(() => {
+      vscode.commands.executeCommand('miraChatView.focus');
+    });
+  }, 500);
+
   // Select MCP transport based on workspace configuration
   const cfg = vscode.workspace.getConfiguration('mira');
   const transportType = (cfg.get<'stdio' | 'http'>('transport', 'stdio'));
@@ -76,8 +83,8 @@ export function activate(context: vscode.ExtensionContext) {
   });
 
   const openChatViewCmd = vscode.commands.registerCommand('mira.openChatView', async () => {
-    await vscode.commands.executeCommand('workbench.view.explorer');
-    vscode.commands.executeCommand('mira.chat.focus');
+    await vscode.commands.executeCommand('workbench.view.extension.miraSidebar');
+    await vscode.commands.executeCommand('miraChatView.focus');
   });
 
   // Terminal commands

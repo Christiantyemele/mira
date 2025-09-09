@@ -1,5 +1,6 @@
 import { LiteLLMClient } from '../llm/LiteLLMClient';
 import { ChatTurn, MemoryStore } from '../../storage/memory/MemoryStore';
+import { MemoryStoreChatHistory } from '../llm/memory/LangChainMemoryAdapter';
 import { Plan, Task } from '../planner/PlannerService';
 import { ChainEngine, ToolDef } from '../llm/ChainEngine';
 import path from 'path';
@@ -44,34 +45,88 @@ export class LLMOrchestrator implements ILLMOrchestrator {
     }
   }
 
-
   async orchestrateChat(userMessage: string, context: OrchestratorContext): Promise<{ reply: string; history: ChatTurn[] }> {
     const sessionId = context.sessionId;
     const now = Date.now();
 
+    // Use LangChainMemoryAdapter for chat history
+    const chatHistory = new MemoryStoreChatHistory(this.memory, sessionId);
+
     // Persist user message first
-    const userTurn: ChatTurn = { role: 'user', content: userMessage, timestamp: now };
-    this.memory.append(sessionId, userTurn);
+    await chatHistory.addMessage({ role: 'user', content: userMessage });
 
     // Load history (including userTurn)
-    const history = this.memory.getHistory(sessionId);
+    const history = await chatHistory.getMessages();
 
     const { text } = await this.engine.runChatChain({
       systemPrompt: context.systemPrompt,
-      messages: history,
+      messages: history.map(m => ({ ...m, timestamp: Date.now() })),
       role: context.role,
       tools: context.tools,
       extraContext: context.extraContext
     });
 
     // Persist assistant reply
-    const assistantTurn: ChatTurn = { role: 'assistant', content: text, timestamp: Date.now() };
-    this.memory.append(sessionId, assistantTurn);
+    await chatHistory.addMessage({ role: 'assistant', content: text });
 
-    const updatedHistory = this.memory.getHistory(sessionId);
-    return { reply: text, history: updatedHistory };
+    // Get updated history
+    const updatedHistory = await chatHistory.getMessages();
+    // Convert to ChatTurn[] for return (add timestamp as now for each)
+    const chatTurns: ChatTurn[] = updatedHistory.map(m => ({
+      role: m.role,
+      content: m.content,
+      timestamp: now // Optionally, could fetch from MemoryStore if needed
+    }));
+
+    return { reply: text, history: chatTurns };
   }
 
+  /**
+   * Streaming version of orchestrateChat. Yields tokens/chunks as they are generated.
+   * Usage: for await (const token of orchestrateChatStream(...)) { ... }
+   */
+  async *orchestrateChatStream(userMessage: string, context: OrchestratorContext): AsyncGenerator<string, void, unknown> {
+    const sessionId = context.sessionId;
+    const now = Date.now();
+
+    // Use LangChainMemoryAdapter for chat history
+    const chatHistory = new MemoryStoreChatHistory(this.memory, sessionId);
+
+    // Persist user message first
+    await chatHistory.addMessage({ role: 'user', content: userMessage });
+
+    // Load history (including userTurn)
+    const history = await chatHistory.getMessages();
+
+    // Stream tokens/chunks from the engine
+    let fullReply = '';
+    if (typeof this.engine.runChatChainStream === 'function') {
+      for await (const chunk of this.engine.runChatChainStream({
+        systemPrompt: context.systemPrompt,
+        messages: history.map(m => ({ ...m, timestamp: Date.now() })),
+        role: context.role,
+        tools: context.tools,
+        extraContext: context.extraContext
+      })) {
+        fullReply += chunk;
+        yield chunk;
+      }
+    } else {
+      // Fallback: yield the full result at once
+      const result = await this.engine.runChatChain({
+        systemPrompt: context.systemPrompt,
+        messages: history.map(m => ({ ...m, timestamp: Date.now() })),
+        role: context.role,
+        tools: context.tools,
+        extraContext: context.extraContext
+      });
+      fullReply = result.text;
+      yield result.text;
+    }
+
+    // Persist assistant reply
+    await chatHistory.addMessage({ role: 'assistant', content: fullReply });
+  }
   async planTasks(
     projectState: { title: string; summary?: string; goals?: string[] },
     context?: OrchestratorContext

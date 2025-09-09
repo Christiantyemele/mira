@@ -52,6 +52,10 @@ export class ToolRegistry {
 
   buildLangChainTools(deps: { terminal?: TerminalService; vectorStore?: VectorStore; embedder?: LiteLLMClient; namespace?: string; defaultTopK?: number }): StructuredTool[] {
     const out: StructuredTool[] = [];
+    // Always include project-file-list tool
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { ProjectFileListTool } = require('./langchain/ProjectFileListTool');
+    out.push(ProjectFileListTool);
     if (deps.terminal) {
       out.push(createTerminalTool(deps.terminal));
     }
@@ -65,4 +69,14 @@ export class ToolRegistry {
     }
     return out;
   }
+}
+
+/**
+ * Registers built-in tools, including project-file-list, into the given registry.
+ */
+export function registerBuiltinTools(registry: ToolRegistry) {
+  // Dynamically import to avoid circular deps if needed
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { ProjectFileListTool } = require('./langchain/ProjectFileListTool');
+  registry.register(ProjectFileListTool);
 }
